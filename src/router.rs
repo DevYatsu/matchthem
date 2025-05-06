@@ -173,8 +173,15 @@ impl<T> Router<T> {
             Err(MergeError(errors))
         }
     }
+}
 
-    /// Returns all matches for a given path, including overlapping prefix matches.
+impl<T> Router<T> {
+    /// Returns all non-mutable matches for a given path, including overlapping and partial matches.
+    ///
+    /// This is useful when you want to collect all routes that match a path pattern,
+    /// rather than just the single most specific one (as with `at`).
+    ///
+    /// Note: Returned matches are not sorted by insertion or specificity.
     pub fn all_matches<'path>(&self, path: &'path str) -> Vec<Match<'_, 'path, &T>> {
         self.root
             .all_matches(path.as_bytes())
@@ -187,7 +194,11 @@ impl<T> Router<T> {
             .collect()
     }
 
-    /// Returns all mutable matches for a given path, including overlapping prefix matches.
+    /// Returns all *mutable* matches for a given path, including overlapping and partial matches.
+    ///
+    /// This is particularly useful if you need to modify multiple matched route values at once.
+    ///
+    /// Note: Returned matches are not sorted by insertion or specificity.
     pub fn all_matches_mut<'path>(&mut self, path: &'path str) -> Vec<Match<'_, 'path, &mut T>> {
         self.root
             .all_matches(path.as_bytes())
