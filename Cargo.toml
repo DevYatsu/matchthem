@@ -1,8 +1,8 @@
 [package]
 name = "matchthem"
-version = "0.8.6"
+version = "0.0.1"
 license = "MIT AND BSD-3-Clause"
-authors = ["Ibraheem Ahmed <ibraheem@ibraheem.ca>"]
+authors = ["Yatsu <dev.yatsu@gmail.com>"]
 edition = "2021"
 description = " A high performance, zero-copy URL router with support for multi-path, middleware-style matching, and rich param syntax."
 categories = ["network-programming", "algorithms"]
