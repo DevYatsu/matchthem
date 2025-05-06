@@ -1,4 +1,4 @@
-use matchit::Router;
+use matchthem::Router;
 
 struct RemoveTest {
     routes: Vec<&'static str>,

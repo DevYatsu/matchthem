@@ -832,6 +832,199 @@ impl<T> Node<T> {
     }
 }
 
+impl<T> Node<T> {
+    /// Returns all nodes matching the given path.
+    ///
+    /// Unlike `at` which returns the highest priority match,
+    /// this function returns all possible matches for a given path.
+    pub fn all_matches<'node, 'path>(
+        &'node self,
+        path: &'path [u8],
+    ) -> Vec<(&'node UnsafeCell<T>, Params<'node, 'path>)> {
+        let mut matches = Vec::new();
+        let mut params = Params::new();
+        self.collect_matches(path, &mut params, &mut matches);
+        matches
+    }
+
+    fn collect_matches<'node, 'path>(
+        &'node self,
+        path: &'path [u8],
+        params: &mut Params<'node, 'path>,
+        matches: &mut Vec<(&'node UnsafeCell<T>, Params<'node, 'path>)>,
+    ) {
+        // Check if the path starts with this node's prefix
+        if path.len() < self.prefix.len() || path[..self.prefix.len()] != *self.prefix {
+            return;
+        }
+
+        let remaining = &path[self.prefix.len()..];
+
+        // If this is an exact match and there's a value, add it to matches
+        if remaining.is_empty() {
+            if let Some(ref value) = self.value {
+                // Clone parameters only when we need to add a match
+                let mut final_params = params.clone();
+                // Only remap keys if there are remappings available
+                if !self.remapping.is_empty() {
+                    final_params.for_each_key_mut(|(i, param)| {
+                        if let Some(key) = self.remapping.get(i) {
+                            param.key = key;
+                        }
+                    });
+                }
+                matches.push((value, final_params));
+            }
+            return;
+        }
+
+        // Try static children first - this is a common case so we optimize it
+        let next = remaining[0];
+        for (i, &c) in self.indices.iter().enumerate() {
+            if c == next {
+                let child = &self.children[i];
+                child.collect_matches(remaining, params, matches);
+                break; // Once we find a matching static child, no need to check others
+            }
+        }
+
+        // Try wildcard child if available
+        if self.wild_child {
+            let wildcard = self.children.last().unwrap();
+            match wildcard.node_type {
+                NodeType::Param { suffix: false } => {
+                    // Find where this parameter ends (at the next '/')
+                    let end = match remaining.iter().position(|&c| c == b'/') {
+                        Some(i) => i,
+                        None => remaining.len(),
+                    };
+
+                    // Extract parameter value
+                    let (param_value, rest) = remaining.split_at(end);
+
+                    // Empty param is not a match
+                    if param_value.is_empty() {
+                        return;
+                    }
+
+                    // Store parameter value in our params
+                    let params_len = params.len();
+                    params.push(b"", param_value);
+
+                    // Check if this is a match
+                    if end == remaining.len() && wildcard.value.is_some() {
+                        let mut final_params = params.clone();
+                        if !wildcard.remapping.is_empty() {
+                            final_params.for_each_key_mut(|(i, param)| {
+                                if let Some(key) = wildcard.remapping.get(i) {
+                                    param.key = key;
+                                }
+                            });
+                        }
+                        matches.push((&wildcard.value.as_ref().unwrap(), final_params));
+                    }
+
+                    // Continue with the next segment if there is one
+                    if end < remaining.len() {
+                        // Skip the '/'
+                        let rest = &rest[1..];
+
+                        // Continue with children
+                        for child in &wildcard.children {
+                            child.collect_matches(rest, params, matches);
+                        }
+                    }
+
+                    // Remove the parameter we added
+                    params.truncate(params_len);
+                }
+                NodeType::Param { suffix: true } => {
+                    // Handle param with suffix (more complex)
+                    let slash_pos = remaining.iter().position(|&c| c == b'/');
+
+                    // The terminator is either the slash or end of path
+                    let terminator = match slash_pos {
+                        Some(0) => return, // Double slash - no match
+                        Some(i) => i,
+                        None => remaining.len(),
+                    };
+
+                    let params_len = params.len();
+
+                    // Try all suffix variants
+                    for child in &wildcard.children {
+                        if child.prefix.len() >= terminator {
+                            continue;
+                        }
+
+                        // Check if suffix matches
+                        let suffix_start = terminator - child.prefix.len();
+                        let (param_value, suffix) = remaining[..terminator].split_at(suffix_start);
+
+                        if *suffix == *child.prefix {
+                            // The suffix matches, add parameter and continue
+                            params.push(b"", param_value);
+
+                            // Continue matching with the rest of the path
+                            let next_path = &remaining[suffix_start..];
+                            child.collect_matches(next_path, params, matches);
+
+                            // Remove the parameter we added
+                            params.truncate(params_len);
+                        }
+                    }
+
+                    // If this is the last segment and node has a value, it's a match
+                    if slash_pos.is_none() && wildcard.value.is_some() {
+                        // Store parameter value
+                        params.push(b"", remaining);
+
+                        let mut final_params = params.clone();
+                        if !wildcard.remapping.is_empty() {
+                            final_params.for_each_key_mut(|(i, param)| {
+                                if let Some(key) = wildcard.remapping.get(i) {
+                                    param.key = key;
+                                }
+                            });
+                        }
+
+                        matches.push((&wildcard.value.as_ref().unwrap(), final_params));
+
+                        // Remove the parameter we added
+                        params.truncate(params_len);
+                    }
+                }
+                NodeType::CatchAll => {
+                    // Catch-all parameters match the rest of the path
+                    if let Some(ref value) = wildcard.value {
+                        // Extract the parameter name from the prefix "{*name}"
+                        let key = &wildcard.prefix[2..wildcard.prefix.len() - 1];
+
+                        // Store parameter value
+                        let params_len = params.len();
+                        params.push(key, remaining);
+
+                        let mut final_params = params.clone();
+                        if !wildcard.remapping.is_empty() {
+                            final_params.for_each_key_mut(|(i, param)| {
+                                if let Some(key) = wildcard.remapping.get(i) {
+                                    param.key = key;
+                                }
+                            });
+                        }
+
+                        matches.push((value, final_params));
+
+                        // Remove the parameter we added
+                        params.truncate(params_len);
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
 /// An ordered list of route parameters keys for a specific route.
 ///
 /// To support conflicting routes like `/{a}/foo` and `/{b}/bar`, route parameters

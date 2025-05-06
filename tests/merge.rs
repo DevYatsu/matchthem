@@ -1,4 +1,4 @@
-use matchit::{InsertError, Router};
+use matchthem::{InsertError, Router};
 
 #[test]
 fn merge_ok() {

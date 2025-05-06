@@ -1,4 +1,4 @@
-use matchit::{InsertError, Router};
+use matchthem::{InsertError, Router};
 
 struct InsertTest(Vec<(&'static str, Result<(), InsertError>)>);
 

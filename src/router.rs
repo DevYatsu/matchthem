@@ -173,6 +173,32 @@ impl<T> Router<T> {
             Err(MergeError(errors))
         }
     }
+
+    /// Returns all matches for a given path, including overlapping prefix matches.
+    pub fn all_matches<'path>(&self, path: &'path str) -> Vec<Match<'_, 'path, &T>> {
+        self.root
+            .all_matches(path.as_bytes())
+            .into_iter()
+            .map(|(value, params)| Match {
+                // Safety: We only expose `&mut T` through `&mut self`
+                value: unsafe { &*value.get() },
+                params,
+            })
+            .collect()
+    }
+
+    /// Returns all mutable matches for a given path, including overlapping prefix matches.
+    pub fn all_matches_mut<'path>(&mut self, path: &'path str) -> Vec<Match<'_, 'path, &mut T>> {
+        self.root
+            .all_matches(path.as_bytes())
+            .into_iter()
+            .map(|(value, params)| Match {
+                // Safety: We have `&mut self`
+                value: unsafe { &mut *value.get() },
+                params,
+            })
+            .collect()
+    }
 }
 
 /// A successful match consisting of the registered value

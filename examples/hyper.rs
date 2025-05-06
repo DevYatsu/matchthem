@@ -36,7 +36,7 @@ type Service = tower::util::BoxCloneSyncService<Request<Incoming>, Response<Body
 
 // We use a `HashMap` to hold a `Router` for each HTTP method. This allows us
 // to register the same route for multiple methods.
-type Router = HashMap<Method, matchit::Router<Service>>;
+type Router = HashMap<Method, matchthem::Router<Service>>;
 
 async fn route(router: Arc<Router>, req: Request<Incoming>) -> hyper::Result<Response<Body>> {
     // find the subrouter for this request method
